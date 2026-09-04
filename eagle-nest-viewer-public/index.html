@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nest Structure — Prototype Viewer</title>
+<style>
+  :root {
+    --bg: #14171a;
+    --panel: rgba(20, 23, 26, 0.82);
+    --text: #e8e6e1;
+    --text-dim: #9a9691;
+    --accent: #c9a876;
+    --border: rgba(232, 230, 225, 0.12);
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    overflow: hidden;
+  }
+  #canvas-container {
+    position: fixed;
+    inset: 0;
+  }
+  canvas { display: block; }
+
+  #loading {
+    position: fixed;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg);
+    z-index: 100;
+    transition: opacity 0.6s ease;
+  }
+  #loading.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+  .loading-label {
+    font-size: 13px;
+    letter-spacing: 0.02em;
+    color: var(--text-dim);
+    margin-top: 16px;
+  }
+  .spinner {
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #title-bar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    padding: 18px 22px;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    z-index: 10;
+    pointer-events: none;
+  }
+  #title-bar h1 {
+    font-size: 15px;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: 0.01em;
+  }
+  #title-bar .subtitle {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 2px;
+  }
+
+  #controls {
+    position: fixed;
+    bottom: 22px;
+    left: 22px;
+    right: 22px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    z-index: 10;
+  }
+  .panel {
+    background: var(--panel);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    pointer-events: auto;
+  }
+  #transport {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+  }
+  #playPause {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: var(--accent);
+    color: #14171a;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+  }
+  #playPause:hover { transform: scale(1.06); }
+  #playPause svg { width: 14px; height: 14px; }
+
+  #scrubber {
+    flex: 1;
+    -webkit-appearance: none;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--border);
+    outline: none;
+    cursor: pointer;
+  }
+  #scrubber::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  #scrubber::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+
+  #timeLabel {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    min-width: 74px;
+    text-align: right;
+  }
+
+  #help-toggle {
+    padding: 10px 14px;
+    font-size: 12px;
+    color: var(--text-dim);
+    cursor: pointer;
+    user-select: none;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+  }
+
+  #error-box {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    max-width: 440px;
+    padding: 22px 24px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--text);
+    display: none;
+    z-index: 200;
+  }
+  #error-box strong { color: #e08a6e; }
+</style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="loading">
+  <div class="spinner"></div>
+  <div class="loading-label">Loading scene…</div>
+</div>
+
+<div id="title-bar">
+  <div>
+    <h1>Nest Structure</h1>
+    <div class="subtitle">Prototype viewer — generative environment test</div>
+  </div>
+</div>
+
+<div id="controls">
+  <div class="panel" id="transport">
+    <button id="playPause" aria-label="Play or pause">
+      <svg id="iconPlay" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+      <svg id="iconPause" viewBox="0 0 24 24" fill="currentColor" style="display:none"><path d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+    </button>
+    <input type="range" id="scrubber" min="0" max="1000" value="0">
+    <span id="timeLabel">0.0s / 0.0s</span>
+  </div>
+  <div class="panel" id="help-toggle">drag to orbit · scroll to zoom · right-drag to pan</div>
+</div>
+
+<div id="error-box"></div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const container = document.getElementById('canvas-container');
+const loadingEl = document.getElementById('loading');
+const loadingLabel = loadingEl.querySelector('.loading-label');
+const errorBox = document.getElementById('error-box');
+
+function showError(msg) {
+  errorBox.style.display = 'block';
+  errorBox.innerHTML = msg;
+  loadingEl.classList.add('hidden');
+}
+
+// --- Renderer ---
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+container.appendChild(renderer.domElement);
+
+// --- Scene ---
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x14171a);
+scene.fog = new THREE.Fog(0x14171a, 8, 30);
+
+// --- Camera ---
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(2.2, 1.8, 2.6);
+
+// --- Controls ---
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.minDistance = 0.3;
+controls.maxDistance = 12;
+controls.target.set(0, 0.4, 0.6);
+// Free orbit horizontally, but cap how far below "level" the camera can
+// go so the player can't dip under the ground plane and look up through
+// it — 88° keeps it just short of true horizontal, avoiding edge-case
+// clipping right at the ground line.
+controls.maxPolarAngle = Math.PI * (88 / 180);
+controls.update();
+
+// --- Lighting ---
+const hemi = new THREE.HemisphereLight(0xfff4e0, 0x22262b, 0.9);
+scene.add(hemi);
+
+const keyLight = new THREE.DirectionalLight(0xfff0dd, 2.4);
+keyLight.position.set(3, 5, 2);
+keyLight.castShadow = true;
+keyLight.shadow.mapSize.set(2048, 2048);
+keyLight.shadow.camera.near = 0.1;
+keyLight.shadow.camera.far = 15;
+keyLight.shadow.camera.left = -3;
+keyLight.shadow.camera.right = 3;
+keyLight.shadow.camera.top = 3;
+keyLight.shadow.camera.bottom = -3;
+keyLight.shadow.bias = -0.0005;
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0x8fb8d9, 0.5);
+fillLight.position.set(-3, 2, -2);
+scene.add(fillLight);
+
+// Ground for shadow catching
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(6, 48),
+  new THREE.MeshStandardMaterial({ color: 0x1c1f22, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.01;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// --- Load model ---
+const loader = new GLTFLoader();
+let mixer = null;
+let action = null;
+let clipDuration = 0;
+let isPlaying = true;
+let userScrubbing = false;
+
+const playPauseBtn = document.getElementById('playPause');
+const iconPlay = document.getElementById('iconPlay');
+const iconPause = document.getElementById('iconPause');
+const scrubber = document.getElementById('scrubber');
+const timeLabel = document.getElementById('timeLabel');
+
+loader.load(
+  'assets/nest.glb',
+  (gltf) => {
+    const root = gltf.scene;
+
+    root.traverse((obj) => {
+      if (obj.isMesh) {
+        obj.castShadow = true;
+        obj.receiveShadow = true;
+        if (obj.material) {
+          obj.material.side = THREE.DoubleSide;
+        }
+      }
+    });
+
+    scene.add(root);
+
+    // Some meshes (e.g. a large mask/ground plane used to hide branches
+    // before they emerge, in the original fixed-camera video workflow)
+    // are far larger than the actual nest content and would badly skew
+    // auto-framing if included. Exclude any mesh whose own bounding box
+    // is disproportionately larger than the rest of the scene when
+    // deciding how to frame the camera — but keep it fully in the scene
+    // and rendered normally.
+    const perObjectBoxes = [];
+    root.traverse((obj) => {
+      if (obj.isMesh) {
+        const b = new THREE.Box3().setFromObject(obj);
+        const s = b.getSize(new THREE.Vector3());
+        perObjectBoxes.push({ obj, box: b, maxDim: Math.max(s.x, s.y, s.z) });
+      }
+    });
+    const dims = perObjectBoxes.map(o => o.maxDim).sort((a, b) => a - b);
+    const median = dims[Math.floor(dims.length / 2)] || 1;
+    // Treat anything more than 6x the median object size as a
+    // backdrop/mask plane rather than actual content to frame around.
+    const contentBoxes = perObjectBoxes.filter(o => o.maxDim < median * 6);
+    const maskObjects = perObjectBoxes.filter(o => o.maxDim >= median * 6).map(o => o.obj);
+
+    const box = new THREE.Box3();
+    if (contentBoxes.length > 0) {
+      contentBoxes.forEach(o => box.union(o.box));
+    } else {
+      box.setFromObject(root); // fallback if the size split didn't find a clear outlier
+    }
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z) || 1;
+
+    controls.target.copy(center);
+    const dist = maxDim * 1.8;
+    camera.position.set(center.x + dist * 0.6, center.y + dist * 0.5, center.z + dist * 0.6);
+    camera.near = maxDim / 100;
+    camera.far = maxDim * 80;
+    camera.updateProjectionMatrix();
+    controls.minDistance = maxDim * 0.15;
+    controls.maxDistance = maxDim * 6;
+    controls.update();
+
+    // Hide the synthetic ground disc — the real mask plane from the file
+    // (if any) already does this job, and stacking both looks wrong.
+    ground.visible = maskObjects.length === 0;
+    if (ground.visible) {
+      ground.scale.setScalar(maxDim * 1.5);
+      ground.position.y = box.min.y - 0.001;
+    }
+
+    // --- Keep each animated part invisible until its own first keyframe ---
+    // This works from any camera angle, independent of the mask plane's
+    // physical position, so free navigation can't peek at branches early.
+    const partsWithAnimation = new Set();
+    if (gltf.animations && gltf.animations.length > 0) {
+      const clip = gltf.animations[0];
+      const firstKeyframeByNode = new Map();
+      clip.tracks.forEach((track) => {
+        // track.name is like "NodeName.position" or similar UUID/name path
+        const nodeName = track.name.split('.')[0];
+        const t0 = track.times[0];
+        if (!firstKeyframeByNode.has(nodeName) || t0 < firstKeyframeByNode.get(nodeName)) {
+          firstKeyframeByNode.set(nodeName, t0);
+        }
+      });
+      root.traverse((obj) => {
+        if (firstKeyframeByNode.has(obj.name)) {
+          partsWithAnimation.add(obj);
+          obj.userData.revealTime = firstKeyframeByNode.get(obj.name);
+          obj.visible = false;
+        }
+      });
+    }
+    window.__nestParts = partsWithAnimation;
+
+    // --- Animation: the exported clip's keyframes start well after t=0
+    // (baked from a much later point in the original Blender timeline).
+    // We detect the clip's real start/end from its tracks and play
+    // strictly within that window, rather than trusting t=0 as the start.
+    if (gltf.animations && gltf.animations.length > 0) {
+      mixer = new THREE.AnimationMixer(root);
+      const clip = gltf.animations[0];
+
+      // Find the true first and last keyframe time across all tracks
+      let trueStart = Infinity;
+      let trueEnd = 0;
+      clip.tracks.forEach((track) => {
+        if (track.times.length > 0) {
+          trueStart = Math.min(trueStart, track.times[0]);
+          trueEnd = Math.max(trueEnd, track.times[track.times.length - 1]);
+        }
+      });
+      if (!isFinite(trueStart)) trueStart = 0;
+
+      clipDuration = trueEnd - trueStart;
+
+      action = mixer.clipAction(clip);
+      action.play();
+      action.paused = false;
+      // Set the mixer's internal clock to the clip's real start time so
+      // playback begins at the first authored keyframe, not at t=0 where
+      // no object has data and engines default to a degenerate pose.
+      mixer.setTime(trueStart);
+
+      window.__nestAnim = { mixer, action, trueStart, trueEnd, clipDuration };
+
+      scrubber.max = Math.round(clipDuration * 1000);
+      timeLabel.textContent = `0.0s / ${clipDuration.toFixed(1)}s`;
+    } else {
+      document.getElementById('transport').style.display = 'none';
+    }
+
+    loadingEl.classList.add('hidden');
+  },
+  (xhr) => {
+    if (xhr.total) {
+      const pct = Math.round((xhr.loaded / xhr.total) * 100);
+      loadingLabel.textContent = `Loading scene… ${pct}%`;
+    }
+  },
+  (err) => {
+    console.error(err);
+    showError(
+      `<strong>Could not load the scene.</strong><br><br>` +
+      `${err?.message || 'Unknown error while loading assets/nest.glb.'}<br><br>` +
+      `Check that nest.glb is in the assets/ folder next to this file.`
+    );
+  }
+);
+
+// --- Playback UI ---
+function setPlaying(playing) {
+  isPlaying = playing;
+  iconPlay.style.display = playing ? 'none' : 'block';
+  iconPause.style.display = playing ? 'block' : 'none';
+}
+
+playPauseBtn.addEventListener('click', () => setPlaying(!isPlaying));
+
+scrubber.addEventListener('input', () => {
+  if (!action || !window.__nestAnim) return;
+  userScrubbing = true;
+  const { trueStart } = window.__nestAnim;
+  const t = trueStart + scrubber.value / 1000;
+  mixer.setTime(t);
+  timeLabel.textContent = `${(scrubber.value / 1000).toFixed(1)}s / ${clipDuration.toFixed(1)}s`;
+  // Recompute visibility fresh each time (not just "reveal") so
+  // scrubbing backward correctly re-hides parts too.
+  if (window.__nestParts) {
+    window.__nestParts.forEach((obj) => {
+      obj.visible = mixer.time >= obj.userData.revealTime;
+    });
+  }
+});
+scrubber.addEventListener('change', () => { userScrubbing = false; });
+
+// --- Reveal-on-emergence: show each part once playback reaches its
+// own first keyframe time; re-hide everything on loop restart. ---
+function updatePartVisibility(mixerTime, justLooped) {
+  if (!window.__nestParts) return;
+  window.__nestParts.forEach((obj) => {
+    if (justLooped) {
+      obj.visible = false;
+    }
+    if (mixerTime >= obj.userData.revealTime) {
+      obj.visible = true;
+    }
+  });
+}
+
+// --- Resize ---
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// --- Render loop ---
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  if (mixer && isPlaying && !userScrubbing) {
+    mixer.update(delta);
+    const { trueStart, trueEnd } = window.__nestAnim;
+    let elapsed = mixer.time - trueStart;
+    let looped = false;
+    if (elapsed >= clipDuration) {
+      // loop back to the real start rather than t=0
+      mixer.setTime(trueStart);
+      elapsed = 0;
+      looped = true;
+    }
+    scrubber.value = Math.round(elapsed * 1000);
+    timeLabel.textContent = `${elapsed.toFixed(1)}s / ${clipDuration.toFixed(1)}s`;
+    updatePartVisibility(mixer.time, looped);
+  }
+
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+</script>
+
+</body>
+</html>
